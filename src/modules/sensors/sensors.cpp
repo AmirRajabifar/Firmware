@@ -212,7 +212,7 @@ private:
 		SensorData()
 			: last_best_vote(0),
 			  subscription_count(0),
-			  voter(SENSOR_COUNT_MAX),
+			  voter(1),
 			  last_failover_count(0)
 		{
 			for (unsigned i = 0; i < SENSOR_COUNT_MAX; i++) {
@@ -305,6 +305,8 @@ private:
 		int rc_map_acro_sw;
 		int rc_map_offboard_sw;
 		int rc_map_kill_sw;
+		int rc_map_trans_sw;
+		int rc_map_gear_sw;
 
 		int rc_map_flaps;
 
@@ -328,6 +330,8 @@ private:
 		float rc_acro_th;
 		float rc_offboard_th;
 		float rc_killswitch_th;
+		float rc_trans_th;
+		float rc_gear_th;
 		bool rc_assist_inv;
 		bool rc_auto_inv;
 		bool rc_rattitude_inv;
@@ -337,6 +341,8 @@ private:
 		bool rc_acro_inv;
 		bool rc_offboard_inv;
 		bool rc_killswitch_inv;
+		bool rc_trans_inv;
+		bool rc_gear_inv;
 
 		float battery_voltage_scaling;
 		float battery_current_scaling;
@@ -375,6 +381,8 @@ private:
 		param_t rc_map_acro_sw;
 		param_t rc_map_offboard_sw;
 		param_t rc_map_kill_sw;
+		param_t rc_map_trans_sw;
+		param_t rc_map_gear_sw;
 
 		param_t rc_map_flaps;
 
@@ -402,6 +410,8 @@ private:
 		param_t rc_acro_th;
 		param_t rc_offboard_th;
 		param_t rc_killswitch_th;
+		param_t rc_trans_th;
+		param_t rc_gear_th;
 
 		param_t battery_voltage_scaling;
 		param_t battery_current_scaling;
@@ -593,7 +603,7 @@ Sensors::Sensors() :
 	_vibration_warning_timestamp(0),
 	_vibration_warning(false)
 {
-	_mag.voter.set_timeout(200000);
+	_mag.voter.set_timeout(300000);
 
 	memset(&_rc, 0, sizeof(_rc));
 	memset(&_diff_pres, 0, sizeof(_diff_pres));
@@ -650,6 +660,8 @@ Sensors::Sensors() :
 	_parameter_handles.rc_map_acro_sw = param_find("RC_MAP_ACRO_SW");
 	_parameter_handles.rc_map_offboard_sw = param_find("RC_MAP_OFFB_SW");
 	_parameter_handles.rc_map_kill_sw = param_find("RC_MAP_KILL_SW");
+	_parameter_handles.rc_map_trans_sw = param_find("RC_MAP_TRANS_SW");
+	_parameter_handles.rc_map_gear_sw = param_find("RC_MAP_GEAR_SW");
 
 	_parameter_handles.rc_map_aux1 = param_find("RC_MAP_AUX1");
 	_parameter_handles.rc_map_aux2 = param_find("RC_MAP_AUX2");
@@ -678,6 +690,9 @@ Sensors::Sensors() :
 	_parameter_handles.rc_acro_th = param_find("RC_ACRO_TH");
 	_parameter_handles.rc_offboard_th = param_find("RC_OFFB_TH");
 	_parameter_handles.rc_killswitch_th = param_find("RC_KILLSWITCH_TH");
+	_parameter_handles.rc_trans_th = param_find("RC_TRANS_TH");
+	_parameter_handles.rc_gear_th = param_find("RC_GEAR_TH");
+
 
 	/* Differential pressure offset */
 	_parameter_handles.diff_pres_offset_pa = param_find("SENS_DPRES_OFF");
@@ -850,6 +865,14 @@ Sensors::parameters_update()
 		PX4_WARN("%s", paramerr);
 	}
 
+	if (param_get(_parameter_handles.rc_map_trans_sw, &(_parameters.rc_map_trans_sw)) != OK) {
+		warnx("%s", paramerr);
+	}
+
+	if (param_get(_parameter_handles.rc_map_gear_sw, &(_parameters.rc_map_gear_sw)) != OK) {
+		warnx("%s", paramerr);
+	}
+
 	if (param_get(_parameter_handles.rc_map_flaps, &(_parameters.rc_map_flaps)) != OK) {
 		PX4_WARN("%s", paramerr);
 	}
@@ -894,6 +917,12 @@ Sensors::parameters_update()
 	param_get(_parameter_handles.rc_killswitch_th, &(_parameters.rc_killswitch_th));
 	_parameters.rc_killswitch_inv = (_parameters.rc_killswitch_th < 0);
 	_parameters.rc_killswitch_th = fabs(_parameters.rc_killswitch_th);
+	param_get(_parameter_handles.rc_trans_th, &(_parameters.rc_trans_th));
+	_parameters.rc_trans_inv = (_parameters.rc_trans_th < 0);
+	_parameters.rc_trans_th = fabs(_parameters.rc_trans_th);
+	param_get(_parameter_handles.rc_gear_th, &(_parameters.rc_gear_th));
+	_parameters.rc_gear_inv = (_parameters.rc_gear_th < 0);
+	_parameters.rc_gear_th = fabs(_parameters.rc_gear_th);
 
 	/* update RC function mappings */
 	_rc.function[rc_channels_s::RC_CHANNELS_FUNCTION_THROTTLE] = _parameters.rc_map_throttle - 1;
@@ -909,6 +938,8 @@ Sensors::parameters_update()
 	_rc.function[rc_channels_s::RC_CHANNELS_FUNCTION_ACRO] = _parameters.rc_map_acro_sw - 1;
 	_rc.function[rc_channels_s::RC_CHANNELS_FUNCTION_OFFBOARD] = _parameters.rc_map_offboard_sw - 1;
 	_rc.function[rc_channels_s::RC_CHANNELS_FUNCTION_KILLSWITCH] = _parameters.rc_map_kill_sw - 1;
+	_rc.function[rc_channels_s::RC_CHANNELS_FUNCTION_TRANSITION] = _parameters.rc_map_trans_sw - 1;
+	_rc.function[rc_channels_s::RC_CHANNELS_FUNCTION_GEAR] = _parameters.rc_map_gear_sw - 1;
 
 	_rc.function[rc_channels_s::RC_CHANNELS_FUNCTION_FLAPS] = _parameters.rc_map_flaps - 1;
 
@@ -967,6 +998,8 @@ Sensors::parameters_update()
 		_parameters.battery_v_div = 5.7013919372f;
 #elif defined (CONFIG_ARCH_BOARD_SITL)
 		_parameters.battery_v_div = 10.177939394f;
+#elif defined (CONFIG_ARCH_BOARD_TAP_V1)
+		_parameters.battery_v_div = 9.0f;
 #else
 		/* ensure a missing default trips a low voltage lockdown */
 		_parameters.battery_v_div = 0.0f;
@@ -1017,7 +1050,7 @@ Sensors::parameters_update()
 	DevHandle h_baro;
 	DevMgr::getHandle(BARO0_DEVICE_PATH, h_baro);
 
-#if !defined(__PX4_QURT) && !defined(__PX4_POSIX_RPI2)
+#if !defined(__PX4_QURT) && !defined(__PX4_POSIX_RPI) && !defined(__PX4_POSIX_BEBOP)
 
 	// TODO: this needs fixing for QURT and Raspberry Pi
 	if (!h_baro.isValid()) {
@@ -1337,19 +1370,18 @@ Sensors::vehicle_control_mode_poll()
 	if (vcontrol_mode_updated) {
 
 		orb_copy(ORB_ID(vehicle_control_mode), _vcontrol_mode_sub, &vcontrol_mode);
+		_armed = vcontrol_mode.flag_armed;
 
 		/* switching from non-HIL to HIL mode */
 		if (vcontrol_mode.flag_system_hil_enabled && !_hil_enabled) {
 			_hil_enabled = true;
 			_publishing = false;
-			_armed = vcontrol_mode.flag_armed;
 
 			/* switching from HIL to non-HIL mode */
 
 		} else if (!_publishing && !_hil_enabled) {
 			_hil_enabled = false;
 			_publishing = true;
-			_armed = vcontrol_mode.flag_armed;
 		}
 	}
 }
@@ -1671,7 +1703,7 @@ Sensors::parameter_update_poll(bool forced)
 bool
 Sensors::apply_gyro_calibration(DevHandle &h, const struct gyro_calibration_s *gcal, const int device_id)
 {
-#if !defined(__PX4_QURT) && !defined(__PX4_POSIX_RPI2)
+#if !defined(__PX4_QURT) && !defined(__PX4_POSIX_RPI) && !defined(__PX4_POSIX_BEBOP)
 
 	/* On most systems, we can just use the IOCTL call to set the calibration params. */
 	return !h.ioctl(GYROIOCSSCALE, (long unsigned int)gcal);
@@ -1685,7 +1717,7 @@ Sensors::apply_gyro_calibration(DevHandle &h, const struct gyro_calibration_s *g
 bool
 Sensors::apply_accel_calibration(DevHandle &h, const struct accel_calibration_s *acal, const int device_id)
 {
-#if !defined(__PX4_QURT) && !defined(__PX4_POSIX_RPI2)
+#if !defined(__PX4_QURT) && !defined(__PX4_POSIX_RPI) && !defined(__PX4_POSIX_BEBOP)
 
 	/* On most systems, we can just use the IOCTL call to set the calibration params. */
 	return !h.ioctl(ACCELIOCSSCALE, (long unsigned int)acal);
@@ -1699,7 +1731,7 @@ Sensors::apply_accel_calibration(DevHandle &h, const struct accel_calibration_s 
 bool
 Sensors::apply_mag_calibration(DevHandle &h, const struct mag_calibration_s *mcal, const int device_id)
 {
-#if !defined(__PX4_QURT) && !defined(__PX4_POSIX_RPI2)
+#if !defined(__PX4_QURT) && !defined(__PX4_POSIX_RPI) && !defined(__PX4_POSIX_BEBOP)
 
 	/* On most systems, we can just use the IOCTL call to set the calibration params. */
 	return !h.ioctl(MAGIOCSSCALE, (long unsigned int)mcal);
@@ -2112,6 +2144,10 @@ Sensors::rc_poll()
 						 _parameters.rc_offboard_th, _parameters.rc_offboard_inv);
 			manual.kill_switch = get_rc_sw2pos_position(rc_channels_s::RC_CHANNELS_FUNCTION_KILLSWITCH,
 					     _parameters.rc_killswitch_th, _parameters.rc_killswitch_inv);
+			manual.transition_switch = get_rc_sw2pos_position(rc_channels_s::RC_CHANNELS_FUNCTION_TRANSITION,
+						   _parameters.rc_trans_th, _parameters.rc_trans_inv);
+			manual.gear_switch = get_rc_sw2pos_position(rc_channels_s::RC_CHANNELS_FUNCTION_GEAR,
+					     _parameters.rc_gear_th, _parameters.rc_gear_inv);
 
 			/* publish manual_control_setpoint topic */
 			if (_manual_control_pub != nullptr) {
@@ -2166,14 +2202,14 @@ Sensors::check_failover(SensorData &sensor, const char *sensor_name)
 			PX4_INFO("%s sensor switch from #%i", sensor_name, sensor.voter.failover_index());
 
 		} else {
-			mavlink_and_console_log_emergency(&_mavlink_log_pub, "%s #%i failure :%s%s%s%s%s!",
-							  sensor_name,
-							  sensor.voter.failover_index(),
-							  ((flags & DataValidator::ERROR_FLAG_NO_DATA) ? " No data" : ""),
-							  ((flags & DataValidator::ERROR_FLAG_STALE_DATA) ? " Stale data" : ""),
-							  ((flags & DataValidator::ERROR_FLAG_TIMEOUT) ? " Data timeout" : ""),
-							  ((flags & DataValidator::ERROR_FLAG_HIGH_ERRCOUNT) ? " High error count" : ""),
-							  ((flags & DataValidator::ERROR_FLAG_HIGH_ERRDENSITY) ? " High error density" : ""));
+			mavlink_log_emergency(&_mavlink_log_pub, "%s #%i failover :%s%s%s%s%s!",
+					      sensor_name,
+					      sensor.voter.failover_index(),
+					      ((flags & DataValidator::ERROR_FLAG_NO_DATA) ? " No data" : ""),
+					      ((flags & DataValidator::ERROR_FLAG_STALE_DATA) ? " Stale data" : ""),
+					      ((flags & DataValidator::ERROR_FLAG_TIMEOUT) ? " Data timeout" : ""),
+					      ((flags & DataValidator::ERROR_FLAG_HIGH_ERRCOUNT) ? " High error count" : ""),
+					      ((flags & DataValidator::ERROR_FLAG_HIGH_ERRDENSITY) ? " High error density" : ""));
 		}
 
 		sensor.last_failover_count = sensor.voter.failover_count();
@@ -2198,10 +2234,10 @@ Sensors::check_vibration()
 
 		} else if (hrt_elapsed_time(&_vibration_warning_timestamp) > 10000 * 1000) {
 			_vibration_warning = true;
-			mavlink_and_console_log_critical(&_mavlink_log_pub, "HIGH VIBRATION! g: %d a: %d m: %d",
-							 (int)(100 * _gyro.voter.get_vibration_factor(cur_time)),
-							 (int)(100 * _accel.voter.get_vibration_factor(cur_time)),
-							 (int)(100 * _mag.voter.get_vibration_factor(cur_time)));
+			mavlink_log_critical(&_mavlink_log_pub, "HIGH VIBRATION! g: %d a: %d m: %d",
+					     (int)(100 * _gyro.voter.get_vibration_factor(cur_time)),
+					     (int)(100 * _accel.voter.get_vibration_factor(cur_time)),
+					     (int)(100 * _mag.voter.get_vibration_factor(cur_time)));
 			ret = true;
 		}
 
@@ -2230,9 +2266,13 @@ Sensors::init_sensor_class(const struct orb_metadata *meta, SensorData &sensor_d
 	for (unsigned i = 0; i < group_count; i++) {
 		if (sensor_data.subscription[i] < 0) {
 			sensor_data.subscription[i] = orb_subscribe_multi(meta, i);
-			int32_t priority;
-			orb_priority(sensor_data.subscription[i], &priority);
-			sensor_data.priority[i] = (uint8_t)priority;
+
+			if (i > 0) {
+				/* the first always exists, but for each further sensor, add a new validator */
+				if (!sensor_data.voter.add_new_validator()) {
+					PX4_ERR("failed to add validator for sensor %s %i", meta->o_name, i);
+				}
+			}
 		}
 
 		int32_t priority;
@@ -2253,7 +2293,7 @@ Sensors::task_main()
 	/* This calls a sensors_init which can have different implementations on NuttX, POSIX, QURT. */
 	ret = sensors_init();
 
-#if !defined(__PX4_QURT) && !defined(__PX4_POSIX_RPI2)
+#if !defined(__PX4_QURT) && !defined(__PX4_POSIX_RPI) && !defined(__PX4_POSIX_BEBOP)
 	// TODO: move adc_init into the sensors_init call.
 	ret = ret || adc_init();
 #endif
@@ -2320,10 +2360,10 @@ Sensors::task_main()
 	/* advertise the sensor_combined topic and make the initial publication */
 	_sensor_pub = orb_advertise(ORB_ID(sensor_combined), &raw);
 
-	/* wakeup source(s) */
-	px4_pollfd_struct_t fds[SENSOR_COUNT_MAX] = {};
+	/* wakeup source */
+	px4_pollfd_struct_t poll_fds = {};
 
-	int num_poll_fds = 0;
+	poll_fds.events = POLLIN;
 
 	_task_should_exit = false;
 
@@ -2331,18 +2371,12 @@ Sensors::task_main()
 
 	while (!_task_should_exit) {
 
-		/* use the gyro(s) to pace output */
-		if (num_poll_fds != _gyro.subscription_count) { //happens the first time we enter, or when new gyro added
-			num_poll_fds = _gyro.subscription_count;
+		/* use the best-voted gyro to pace output */
+		poll_fds.fd = _gyro.subscription[_gyro.last_best_vote];
 
-			for (int i = 0; i < _gyro.subscription_count; ++i) {
-				fds[i].fd = _gyro.subscription[i];
-				fds[i].events = POLLIN;
-			}
-		}
-
-		/* wait for up to 50ms for data */
-		int pret = px4_poll(fds, num_poll_fds, 50);
+		/* wait for up to 50ms for data (Note that this implies, we can have a fail-over time of 50ms,
+		 * if a gyro fails) */
+		int pret = px4_poll(&poll_fds, 1, 50);
 
 		/* if pret == 0 it timed out - periodic check for _task_should_exit, etc. */
 
@@ -2466,7 +2500,7 @@ Sensors::start()
 	_sensors_task = px4_task_spawn_cmd("sensors",
 					   SCHED_DEFAULT,
 					   SCHED_PRIORITY_MAX - 5,
-					   1500,
+					   1700,
 					   (px4_main_t)&Sensors::task_main_trampoline,
 					   nullptr);
 

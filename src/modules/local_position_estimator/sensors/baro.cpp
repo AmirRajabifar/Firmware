@@ -21,7 +21,7 @@ void BlockLocalPositionEstimator::baroInit()
 
 	// if finished
 	if (_baroStats.getCount() > REQ_BARO_INIT_COUNT) {
-		_baroAltHome = _baroStats.getMean()(0);
+		_baroAltOrigin = _baroStats.getMean()(0);
 		mavlink_and_console_log_info(&mavlink_log_pub,
 					     "[lpe] baro init %d m std %d cm",
 					     (int)_baroStats.getMean()(0),
@@ -29,10 +29,9 @@ void BlockLocalPositionEstimator::baroInit()
 		_baroInitialized = true;
 		_baroFault = FAULT_NONE;
 
-		// only initialize alt home with baro if gps is disabled
-		if (!_altHomeInitialized && !_gps_on.get()) {
-			_altHomeInitialized = true;
-			_altHome = _baroAltHome;
+		if (!_altOriginInitialized) {
+			_altOriginInitialized = true;
+			_altOrigin = _baroAltOrigin;
 		}
 	}
 }
@@ -54,8 +53,8 @@ void BlockLocalPositionEstimator::baroCorrect()
 
 	if (baroMeasure(y) != OK) { return; }
 
-	// subtract baro home alt
-	y -= _baroAltHome;
+	// subtract baro origin alt
+	y -= _baroAltOrigin;
 
 	// baro measurement matrix
 	Matrix<float, n_y_baro, n_x> C;
@@ -76,8 +75,11 @@ void BlockLocalPositionEstimator::baroCorrect()
 
 	if (beta > BETA_TABLE[n_y_baro]) {
 		if (_baroFault < FAULT_MINOR) {
-			mavlink_and_console_log_info(&mavlink_log_pub, "[lpe] baro fault, r %5.2f m, beta %5.2f",
+			if (beta > 2.0f * BETA_TABLE[n_y_baro]) {
+				mavlink_log_critical(&mavlink_log_pub, "[lpe] baro fault, r %5.2f m, beta %5.2f",
 						     double(r(0)), double(beta));
+			}
+
 			_baroFault = FAULT_MINOR;
 		}
 

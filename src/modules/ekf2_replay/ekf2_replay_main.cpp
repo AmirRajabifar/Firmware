@@ -429,6 +429,10 @@ void Ekf2Replay::setEstimatorInput(uint8_t *data, uint8_t type)
 		parseMessage(data, dest_ptr, type);
 		_range.timestamp = replay_part4.time_rng_usec;
 		_range.current_distance = replay_part4.range_to_ground;
+		_range.covariance = 0.0f;
+		// magic values
+		_range.min_distance = 0.05f;
+		_range.max_distance = 30.0f;
 		_read_part4 = true;
 
 	} else if (type == LOG_RPL6_MSG) {
@@ -443,7 +447,7 @@ void Ekf2Replay::setEstimatorInput(uint8_t *data, uint8_t type)
 		uint8_t *dest_ptr = (uint8_t *)&replay_part5.time_ev_usec;
 		parseMessage(data, dest_ptr, type);
 		_ev.timestamp = replay_part5.time_ev_usec;
-		_ev.timestamp_computer = replay_part5.time_ev_usec; // fake this timestamp
+		_ev.timestamp_received = replay_part5.time_ev_usec; // fake this timestamp
 		_ev.x = replay_part5.x;
 		_ev.y = replay_part5.y;
 		_ev.z = replay_part5.z;
@@ -531,15 +535,14 @@ void Ekf2Replay::logIfUpdated()
 	log_message.body.att.q_x = att.q[1];
 	log_message.body.att.q_y = att.q[2];
 	log_message.body.att.q_z = att.q[3];
-	log_message.body.att.roll = att.roll;
-	log_message.body.att.pitch = att.pitch;
-	log_message.body.att.yaw = att.yaw;
+	log_message.body.att.roll = atan2f(2 * (att.q[0] * att.q[1] + att.q[2] * att.q[3]),
+					   1 - 2 * (att.q[1] * att.q[1] + att.q[2] * att.q[2]));
+	log_message.body.att.pitch = asinf(2 * (att.q[0] * att.q[2] - att.q[3] * att.q[1]));
+	log_message.body.att.yaw = atan2f(2 * (att.q[0] * att.q[3] + att.q[1] * att.q[2]),
+					  1 - 2 * (att.q[2] * att.q[2] + att.q[3] * att.q[3]));
 	log_message.body.att.roll_rate = att.rollspeed;
 	log_message.body.att.pitch_rate = att.pitchspeed;
 	log_message.body.att.yaw_rate = att.yawspeed;
-	log_message.body.att.gx = att.g_comp[0];
-	log_message.body.att.gy = att.g_comp[1];
-	log_message.body.att.gz = att.g_comp[2];
 
 	writeMessage(_write_fd, (void *)&log_message.head1, _formats[LOG_ATT_MSG].length);
 
@@ -640,6 +643,10 @@ void Ekf2Replay::logIfUpdated()
 		for (unsigned i = 0; i < 6; i++) {
 			log_message.body.innov.s[i] = innov.vel_pos_innov[i];
 			log_message.body.innov.s[i + 6] = innov.vel_pos_innov_var[i];
+		}
+
+		for (unsigned i = 0; i < 3; i++) {
+			log_message.body.innov.s[i + 12] = innov.output_tracking_error[i];
 		}
 
 		writeMessage(_write_fd, (void *)&log_message.head1, _formats[LOG_EST4_MSG].length);

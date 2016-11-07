@@ -39,8 +39,6 @@
  *
  */
 
-#include <systemlib/param/param.h>
-
 /**
  * Magnetometer measurement delay relative to IMU measurements
  *
@@ -819,7 +817,7 @@ PARAM_DEFINE_FLOAT(EKF2_ARSP_THR, 0.0f);
  * @unit s
  * @decimal 2
  */
-PARAM_DEFINE_FLOAT(EKF2_TAU_VEL, 0.5f);
+PARAM_DEFINE_FLOAT(EKF2_TAU_VEL, 0.25f);
 
 /**
  * Time constant of the position output prediction and smoothing filter. Controls how tightly the output track the EKF states.

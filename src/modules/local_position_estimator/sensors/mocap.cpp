@@ -21,7 +21,6 @@ void BlockLocalPositionEstimator::mocapInit()
 
 	// if finished
 	if (_mocapStats.getCount() > REQ_MOCAP_INIT_COUNT) {
-		_mocapHome = _mocapStats.getMean();
 		mavlink_and_console_log_info(&mavlink_log_pub, "[lpe] mocap position init: "
 					     "%5.2f, %5.2f, %5.2f m std %5.2f, %5.2f, %5.2f m",
 					     double(_mocapStats.getMean()(0)),
@@ -33,9 +32,9 @@ void BlockLocalPositionEstimator::mocapInit()
 		_mocapInitialized = true;
 		_mocapFault = FAULT_NONE;
 
-		if (!_altHomeInitialized) {
-			_altHomeInitialized = true;
-			_altHome = _mocapHome(2);
+		if (!_altOriginInitialized) {
+			_altOriginInitialized = true;
+			_altOrigin = 0;
 		}
 	}
 }
@@ -47,7 +46,7 @@ int BlockLocalPositionEstimator::mocapMeasure(Vector<float, n_y_mocap> &y)
 	y(Y_mocap_y) = _sub_mocap.get().y;
 	y(Y_mocap_z) = _sub_mocap.get().z;
 	_mocapStats.update(y);
-	_time_last_mocap = _sub_mocap.get().timestamp_boot;
+	_time_last_mocap = _sub_mocap.get().timestamp;
 	return OK;
 }
 
@@ -57,9 +56,6 @@ void BlockLocalPositionEstimator::mocapCorrect()
 	Vector<float, n_y_mocap> y;
 
 	if (mocapMeasure(y) != OK) { return; }
-
-	// make measurement relative to home
-	y -= _mocapHome;
 
 	// mocap measurement matrix, measures position
 	Matrix<float, n_y_mocap, n_x> C;
